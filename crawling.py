@@ -1,6 +1,7 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
+from database import col_news
 import time
 
 
@@ -53,13 +54,13 @@ def get_contents_from_news(soup, news):
 
 def get_main_contents(driver, news):
     driver.switch_to.window(driver.window_handles[-1])
-    time.sleep(5)
+    time.sleep(3)
     full_html = driver.page_source
     soup = BeautifulSoup(full_html, "html.parser")
     contents = get_contents_from_news(soup, news)
     driver.close()
     driver.switch_to.window(driver.window_handles[0])
-    time.sleep(5)
+    time.sleep(3)
     return contents.replace('\n', '').replace('\t', '').strip()
 
 
@@ -75,11 +76,17 @@ def get_location(cols):
     return ret
 
 
-def get_data(output="output.txt"):
+def get_data():
     options = webdriver.ChromeOptions()
     options.add_argument('headless')
+    options.add_argument("--window-size=1920,1080")
     options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument("--disable-infobars")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-browser-side-navigation")
+    options.add_argument("--disable-gpu")
+    options.add_argument('--blink-settings=imagesEnabled=false')
+
     url = 'http://rscanner.ndmi.go.kr/scanning/damage_news2.php'
     driver = webdriver.Chrome('chromedriver', options=options)
     driver.get(url=url)
@@ -91,9 +98,9 @@ def get_data(output="output.txt"):
     rows = table_body.select('tr')
     links = driver.find_elements(by=By.CSS_SELECTOR, value="table > tbody > tr > td > a")
 
-    out = open(output, "w", encoding="utf-8")
     err_cnt = 0
-    filter_type = ["도로교통재난사고", "사업장산재", "안전취약계층사고"]
+    filter_type = ["도로교통재난사고", "사업장산재", "안전취약계층사고", "자살"]
+    result = list()
     for i in range(0, len(rows)):
         try:
             row = rows[i]
@@ -106,20 +113,19 @@ def get_data(output="output.txt"):
             news = columns[8].getText()
             title = columns[9].getText()
             links[i].click()
-            time.sleep(2)
+            time.sleep(3)
             contents = get_main_contents(driver, news)
             line = dict()
-            line['유형'] = disaster_type
-            line['위치'] = location
-            line['날짜'] = date
-            line['제목'] = title
-            line['내용'] = contents
-            out.write(str(line))
-            out.write('\n')
+            line['type'] = disaster_type
+            line['location'] = location
+            line['date'] = date
+            line['title'] = title
+            line['contents'] = contents
+            result.append(line)
         except Exception as error:
             print(error)
             err_cnt += 1
 
+    col_news.insert_many(result)
     print(err_cnt)
-    out.close()
     driver.quit()
