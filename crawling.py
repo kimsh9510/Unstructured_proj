@@ -3,6 +3,7 @@ from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 from database import col_news
 import time
+from pprint import pprint
 
 
 def get_contents_from_news(soup, news):
@@ -62,7 +63,7 @@ def get_main_contents(driver, news):
     driver.close()  # 현재 탭 닫기
     driver.switch_to.window(driver.window_handles[0])   # 이전 탭으로 이동
     time.sleep(3)
-    return contents.replace('\n', '').replace('\t', '').strip()     # 문자열 전처리
+    return contents.replace('\n', '').replace('\t', '').replace(u'\xa0', u' ').strip()    # 문자열 전처리
 
 
 def get_location(cols):
@@ -100,15 +101,12 @@ def get_data():
     links = driver.find_elements(by=By.CSS_SELECTOR, value="table > tbody > tr > td > a")   # title 링크 배열
 
     err_cnt = 0
-    filter_type = ["도로교통재난사고", "사업장산재", "안전취약계층사고", "자살"]   # filtering type
     result = list()
     for i in range(0, len(rows)):
         try:
             row = rows[i]
             columns = row.select('td')
             disaster_type = columns[1].getText()
-            if disaster_type in filter_type:    # 재난 유형을 filtering
-                continue
             location = get_location(columns[4:6])   # location 문자열을 합친다.
             date = columns[7].getText()[0:10]   # 날짜 뒤의 (None) 제거하여 저장
             news = columns[8].getText()
@@ -122,6 +120,7 @@ def get_data():
             line['date'] = date
             line['title'] = title
             line['contents'] = contents
+            pprint(line)
             result.append(line)       # dictionary 생성하여 배열에 삽입
         except Exception as error:
             print(error)    # error 발생시 출력하고 err의 개수를 1 증가시킨다.
