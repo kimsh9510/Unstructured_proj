@@ -3,67 +3,7 @@ from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 from database import col_news
 import time
-from pprint import pprint
-
-
-def get_contents_from_news(soup, news):
-    # 뉴스 종류에 따라 기사 내용이 있는 element에서 contents 수집
-    selector = None
-    if news == 'KBS':
-        selector = '#cont_newstext'
-    elif news == 'MBC':
-        selector = 'div.news_txt'
-    elif news == 'SBS':
-        selector = 'div.text_area'
-    elif news == 'YTN':
-        selector = 'div.article > span'
-    elif news == '강원일보':
-        selector = 'knews_body'
-    elif news == '경남도민일보':
-        selector = 'article-view-content-div'
-    elif news == '경북일보':
-        selector = '#article-view-content-div'
-    elif news == '광주일보':
-        selector = '#joinskmbox'
-    elif news == '국민일보':
-        selector = 'div.tx'
-    elif news == '대전일보':
-        selector = '#CmAdContent > div#fontSzArea'
-    elif news == '매일신문':
-        selector = '#articlebody'
-    elif news == '머니투데이':
-        selector = '#textBody'
-    elif news == '부산일보':
-        selector = '.article_content'
-    elif news == '서울경제':
-        selector = '.article_view'
-    elif news == '서울신문':
-        selector = '.S20_v_article'
-    elif news == '세계일보':
-        selector = '.viewBox2'
-    elif news == '한겨례':
-        selector = '.text'
-    elif news == '한국경제':
-        selector = '#articletxt'
-    elif news == '한국일보':
-        selector = '.col-main'
-
-    if selector is None:
-        return ""
-    else:
-        return soup.select_one(selector).getText()
-
-
-def get_main_contents(driver, news):
-    driver.switch_to.window(driver.window_handles[-1])  # 새 탭으로 이동
-    time.sleep(3)
-    full_html = driver.page_source
-    soup = BeautifulSoup(full_html, "html.parser")
-    contents = get_contents_from_news(soup, news)   # 기사 내용 크롤링
-    driver.close()  # 현재 탭 닫기
-    driver.switch_to.window(driver.window_handles[0])   # 이전 탭으로 이동
-    time.sleep(3)
-    return contents.replace('\n', '').replace('\t', '').replace(u'\xa0', u' ').strip()    # 문자열 전처리
+from newspaper import Article
 
 
 def get_location(cols):
@@ -98,34 +38,38 @@ def get_data():
     soup = BeautifulSoup(full_html, "html.parser")
     table_body = soup.select_one('.dataTable > tbody')
     rows = table_body.select('tr')  # table 각각의 row 배열
-    links = driver.find_elements(by=By.CSS_SELECTOR, value="table > tbody > tr > td > a")   # title 링크 배열
+    links = table_body.select("tr > td > a")  # 뉴스 링크 배열
 
     err_cnt = 0
     result = list()
+
+    start = time.time()  # 시간 측정 시작
     for i in range(0, len(rows)):
         try:
             row = rows[i]
             columns = row.select('td')
-            disaster_type = columns[1].getText()
+            disaster_type = columns[1].getText()   # 재난 유형
             location = get_location(columns[4:6])   # location 문자열을 합친다.
             date = columns[7].getText()[0:10]   # 날짜 뒤의 (None) 제거하여 저장
-            news = columns[8].getText()
-            title = columns[9].getText()
-            links[i].click()   # 현재 기사의 링크 클릭
-            time.sleep(3)
-            contents = get_main_contents(driver, news)     # 기사의 내용을 가져온다.
+            link = links[i].get('href')   # 기사 url
+            article = Article(link, language="ko")
+            article.download()
+            article.parse()
+            title = article.title  # 기사의 제목을 가져 온다.
+            contents = article.text.replace('\n', '').replace('\t', '').strip() # 기사의 내용을 가져 온다.
             line = dict()
             line['type'] = disaster_type
             line['location'] = location
             line['date'] = date
             line['title'] = title
             line['contents'] = contents
-            pprint(line)
             result.append(line)       # dictionary 생성하여 배열에 삽입
         except Exception as error:
             print(error)    # error 발생시 출력하고 err의 개수를 1 증가시킨다.
             err_cnt += 1
 
+    end = time.time()  # 시간 측정 완료
+    print(f"크롤링 소요 시간: {end - start:.5f} sec")  # 소요 시간 출력
     col_news.insert_many(result)    # db collection에 크롤링한 데이터 삽입
     print(err_cnt)
     driver.quit()
