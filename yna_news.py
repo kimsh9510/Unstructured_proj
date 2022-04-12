@@ -1,22 +1,22 @@
-import concurrent
-from concurrent.futures import ThreadPoolExecutor
-
-from selenium import webdriver
+from multiprocessing import Pool
+from multiprocessing import Process, freeze_support
+from bs4 import BeautifulSoup
+import requests
+from requests import request
 import time
-from selenium.webdriver.common.by import By
-from selenium.webdriver import ActionChains, Keys
 from pymongo import MongoClient
 
-#크롤링시 firefox사용
 
-def db_write(news_tittle, news_time, news_contents): #DB입력 함수
+# 크롤링시 firefox사용
+
+def db_write(news_tittle, news_time, news_contents):  # DB입력 함수
     host = "localhost"
     port = "27017"
     mongo = MongoClient(host, int(port))
     db = mongo.test
     col = db.yna_news
     dict_list = list()
-    for i in range(0, len(news_tittle)): #dictionary 배열로 변환
+    for i in range(0, len(news_tittle)):  # dictionary 배열로 변환
         dictionary = dict()
         dictionary['tittle'] = news_tittle[i]
         dictionary['time'] = news_time[i]
@@ -26,89 +26,62 @@ def db_write(news_tittle, news_time, news_contents): #DB입력 함수
     return
 
 
-def go_to_start_page(driver: webdriver, start_page):  # 시작할 페이지로 이동
-    page_section = driver.find_element(by=By.CSS_SELECTOR, value='div.paging')
-    present_page = int(page_section.find_element(by=By.CSS_SELECTOR, value='strong').text)
-    page_pointer = int(start_page)
+def get_page_link(url, start_page, present_page):  # 각 페이지 url 생성
+    page_link_list = list()
+    for i in range(start_page, present_page + 1):
+        page_link = url + '/' + str(i)
+        page_link_list.append(page_link)
+    return page_link_list
 
-    if present_page == page_pointer:
-        pass
-    else:
-        next_button_num = page_pointer // 10
-        page_remainder = page_pointer % 10
-        for i in range(0, next_button_num):
-            next_button = driver.find_element(by=By.CSS_SELECTOR, value='.nextPage')
-            next_button.click()
-        page_section = driver.find_element(by=By.CSS_SELECTOR, value='div.paging')
-        page_remainder_button = page_section.find_elements(by=By.CSS_SELECTOR, value='a')[page_remainder - 1]
-        page_remainder_button.click()
+
+def get_data(url):  # 각 페이지별 크롤링
+    tittle = list()  # 제목
+    contents = list()  # 내용
+    news_time = list()  # 시간
+    header = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:66.0) Gecko/20100101 Firefox/66.0",
+              "Accept-Encoding": "*",
+              "Connection": "keep-alive"}
+    r = requests.request("GET", url, headers=header)
+    html = BeautifulSoup(r.text, "html.parser")
+    news_list = html.select('.headline-zone > ul > li')
+    for i in range(0, len(news_list)):
+        tittle.append(news_list[i].select_one('article > div > h3 > a').text)
+        news_time.append(news_list[i].select_one('span').text)
+
+    link_list = html.select('.headline-zone > ul > li > article > div > h3 > a')
+    for i in link_list:
+        link = i.attrs['href']
+        link = 'http:' + link
+        r_news = request("GET", link, headers=header)
+        news_html = BeautifulSoup(r_news.text, "html.parser")
+        contents_list = news_html.select('#articleWrap > div > p')
+        temp_str = ''
+        for j in range(0, len(contents_list)):
+            temp_str = temp_str + ' ' + contents_list[j].text
+        contents.append(temp_str)
+    db_write(tittle, news_time, contents)  # DB입력
     return
 
 
-def move_to_next_page(driver: webdriver, present_page):  # 다음 페이지로 이동
-    page_section = driver.find_element(by=By.CSS_SELECTOR, value='div.paging')
-    if present_page // 10 == 0:
-        if present_page % 10 == 0:
-            next_button = driver.find_element(by=By.CSS_SELECTOR, value='.nextPage')
-            next_button.click()
-            present_page = present_page + 1
-        else:
-            page_button = page_section.find_elements(by=By.CSS_SELECTOR, value='a')[(present_page % 10) - 1]
-            page_button.click()
-            present_page = present_page + 1
-    else:
-        if present_page % 10 == 0:
-            next_button = driver.find_element(by=By.CSS_SELECTOR, value='.nextPage')
-            next_button.click()
-            present_page = present_page + 1
-        else:
-            page_button = page_section.find_elements(by=By.CSS_SELECTOR, value='a')[present_page % 10]
-            page_button.click()
-            present_page = present_page + 1
-    return present_page
-
-
-def get_data(start_page, last_page):  # 각 페이지별 크롤링
-    tittle = list() #제목
-    contents = list() #내용
-    news_time = list() #시간
-
-    driver = webdriver.Firefox()  # 이 파일의 같은 위치에 geckodriver 필요
-    driver.implicitly_wait(3)
-
-    url = 'https://www.yna.co.kr/safe/news' #연합뉴스 재난 포털 최신뉴스
-    driver.get(url)
-
-    html = driver.page_source
-    go_to_start_page(driver, start_page) # 시작 페이지로 이동
-    present_page = start_page
-    news_list = driver.find_elements(by=By.CSS_SELECTOR, value='.headline-zone > ul > li')
-    for t in range(0, (last_page - start_page)):
-        for i in range(0, len(news_list)):
-            temp = news_list[i].text
-            temp_split = temp.split('\n')
-            news_time.append(temp_split[0])
-            tittle.append(temp_split[1])
-
-            link_list_len = len(driver.find_elements(by=By.CSS_SELECTOR, value='.headline-zone > ul > li > article'))
-        for i in range(0, link_list_len):
-            link_list = driver.find_elements(by=By.CSS_SELECTOR, value='article')
-            link = link_list[i].find_element(by=By.CSS_SELECTOR, value='div > h3')
-            driver.find_element(by=By.CSS_SELECTOR, value='html').send_keys(Keys.PAGE_DOWN)
-            link.click()
-            time.sleep(0.5)
-            contents_list = driver.find_elements(by=By.CSS_SELECTOR, value='.story-news > p')
-            temp_str = ''
-            for j in range(0, len(contents_list)):
-                temp_str = temp_str + ' ' + contents_list[j].text
-            contents.insert(i, temp_str)
-            driver.back()
-            time.sleep(0.5)
-        if present_page != last_page:
-            present_page = move_to_next_page(driver, present_page)
-            news_list = driver.find_elements(by=By.CSS_SELECTOR, value='.headline-zone > ul > li')
-        else:
-            pass
-    db_write(tittle, news_time, contents) #DB입력
+def multi_processing_crawling_choose():  # 페이지 선택 가능
+    page1 = input("시작 페이지:")
+    page2 = input("마지막 페이지:")
+    pool = Pool(processes=8)  # 8개의 프로세스를 사용합니다.
+    pool.map(get_data, get_page_link('https://www.yna.co.kr/safe/news', int(page1), int(page2)))
+    pool.close()
+    pool.join()
     return
 
+
+start = time.time()
+if __name__ == '__main__':
+    freeze_support()
+    multi_processing_crawling_choose()  # or multi_processing_crawling_all
+    multi_processing_crawling_choose()
+    multi_processing_crawling_choose()
+    multi_processing_crawling_choose()
+    multi_processing_crawling_choose() #오류 발생으로 인해 나누어서 실행하였다.
+
+end = time.time()
+
+print(str(end - start))
