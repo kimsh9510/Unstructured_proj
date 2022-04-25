@@ -2,8 +2,8 @@
 import requests
 from pymongo import MongoClient
 from pymongo.cursor import CursorType
-from xml.etree.ElementTree import fromstring
-from collections import deque
+import pprint
+import datetime
 
 # MongoDB를 다루는 핸들러 클래스 선언
 class DBHandler:
@@ -48,40 +48,36 @@ class DBHandler:
         result = self.client[db_name][collection_name].find({"$text": {"$search": text}})
         return result
 
-for i in range(1,1000) :
+# 객체 생성
+mongo = DBHandler()
 
-    url = 'http://apis.data.go.kr/1741000/DisasterMsg3/getDisasterMsg1List'
-    params ={'serviceKey' : 'jPI0C9d3WB4hVbjtWVye1mYvAxDjIoC/Zu2HswIlVYUwxm8L2M0gZAyzMXCvLEWmaT8oI9r5WjLJaWhX3Eubag==', 'pageNo' : str(i), 'numOfRows' : '1000', 'type' : 'xml' }
+#{"msg": {"$regex" : ""}}
+#{"create_date" : "2022/04/09 14:10:26"}
+#{'location_id': {"$regex" : "104"}}
+#{'create_date' : {$lt : '2022/04/09', $gt : '2022/04/01'}}
+#{"msg": {"$not":{"$regex" : "확진"}}}
 
-    # 공공api 서버 데이터 요청
-    response = requests.get(url, params=params)
-    xml = response.content.decode('utf-8')
 
-    tree = fromstring(xml)
-    rows = tree.findall("row")
+nowdate = datetime.datetime.strptime("2022/04/02 14:44", "%Y/%m/%d %H:%M")
+nowdate_7 = nowdate - datetime.timedelta(days=7)
+nowdate_7 = nowdate_7.strftime("%Y/%m/%d")
+print(nowdate_7)
 
-    # 객체 생성
-    mongo = DBHandler()
+query = {'create_date' : {'$lt' : '2022/04/09', '$gt' : '2022/04/01 18:00:00'}}
 
-    for row in rows:
-        newdict = dict()
-        # xml 파싱 후 python dictionary로 변환
-        newdict["create_date"] = row.findtext("create_date")
-        newdict["location_id"] = row.findtext("location_id")
-        newdict["location_name"] = row.findtext("location_name")
-        newdict["md101_sn"] = row.findtext("md101_sn")
-        newdict["msg"] = row.findtext("msg")
-        newdict["send_platform"] = row.findtext("send_platform")
+local = dict()
+disaster_list = ["확진", "건조"]
+disaster_dict = {disaster : 0 for disaster in disaster_list}
 
-        # print(newdict)
+for item in mongo.find_item(query, "종프1", "재난문자") :
+    if item['location_name'] not in local :
+        local[item['location_name']] =  disaster_dict.copy()
 
-        # 기존의 DB에 동일한 데이터가 존재하는지 확인
-        compare_dict = mongo.find_item_one({"create_date": newdict["create_date"]}, "종프1", "재난문자")
+    for disaster in disaster_list:
+        if disaster in item['msg']:
+            local[item['location_name']][disaster] += 1  
 
-        if compare_dict is None:
-            # 동일한 데이터가 없으면 데이터 Insert
-            # 종프1 database에 재난문자 collection에 Insert
-            mongo.insert_item_one(newdict, "종프1", "재난문자")
+    # pprint.pprint(item)
 
-    print(i*1000)
-    
+pprint.pprint(local)
+
