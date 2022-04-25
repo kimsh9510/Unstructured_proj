@@ -124,15 +124,14 @@ def text_mining():
 
     items = col_news.find()
     noun_list = list()
-    # 형태소 분석기를 통해 텍스트 데이터에서 명사 추출
     for item in items:
-        # noun_list.append([word for word in okt.nouns(item['title']) if word not in stopwords])
-        # noun_list.append([word for word in okt.nouns(item['contents']) if word not in stopwords])
-
+        # 텍스트에서 명사 추출
+        noun_list.append([word for word in okt.nouns(item['title']) if word not in stopwords and len(word) > 1])
+        noun_list.append([word for word in okt.nouns(item['contents']) if word not in stopwords and len(word) > 1])
         # 텍스트 문장 단위로 추출
         sentences = text2sentences(item['contents'])
         sentences.append(item['title'])
-        # 문장에서 단어 추출
+        # 문장에서 단어 추출 (명사로 이루어진 문장)
         nouns = get_nouns(sentences, stopwords)
         if not nouns:
             continue
@@ -149,10 +148,9 @@ def text_mining():
         # 뉴스 기사 핵심 키워드 출력
         get_keywords(idx2word, sorted_word_rank_idx)
 
-    # print(noun_list)
-    # model = Word2Vec(sentences=noun_list, vector_size=100, window=5, min_count=5, workers=4, sg=0)
-    # print(model.wv.vectors.shape)
-    # print(model.wv.most_similar('산불'))
+    # 추출한 명사를 통해 Word2Vec 모델 학습
+    model = Word2Vec(sentences=noun_list, vector_size=100, window=5, min_count=5, workers=4, sg=0)
+    print(model.wv.most_similar('산불'))  # 가장 유사한 단어 상위 10개를 보여준다
 
     # keyword_cnt = dict()
     # 추출한 명사 중 주요 keyword의 개수를 count
